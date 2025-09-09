@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kanban Dashboard - Chatwoot</title>
     <style>
+        /* [SEU CSS ORIGINAL AQUI] */
         * {
             margin: 0;
             padding: 0;
@@ -59,7 +60,7 @@
         }
 
         .kanban-board {
-            display: grid;
+            display: none; /* Inicia oculto */
             grid-template-columns: repeat(3, 1fr);
             gap: 20px;
             max-width: 1200px;
@@ -228,6 +229,37 @@
         .refresh-btn:hover {
             background: #2563eb;
         }
+        
+        /* Adicionado por você */
+        .settings-container {
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+            text-align: center;
+        }
+
+        .settings-container input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .settings-container button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+        }
 
         /* Scrollbar customization */
         .cards-container::-webkit-scrollbar {
@@ -249,12 +281,16 @@
 
         @media (max-width: 1200px) {
             .kanban-board {
-                flex-direction: column;
+                grid-template-columns: 1fr;
                 max-width: 100%;
             }
             
             .kanban-column {
-                min-width: 100%;
+                min-height: auto;
+            }
+            
+            .cards-container {
+                max-height: 300px;
             }
         }
 
@@ -271,6 +307,15 @@
     </style>
 </head>
 <body>
+    <div class="settings-container" id="settings-form">
+        <h1>Configuração do Kanban</h1>
+        <p>Informe sua URL, ID da conta e Token da API do Chatwoot para continuar.</p>
+        <input type="text" id="chatwoot-url" placeholder="URL da sua instância (ex: https://chat.suaempresa.com.br)">
+        <input type="text" id="account-id" placeholder="Account ID (ex: 1)">
+        <input type="text" id="api-token" placeholder="API Token (ex: aBcDeFgH12345)">
+        <button id="start-kanban">Carregar Kanban</button>
+    </div>
+
     <div class="kanban-header">
         <h1>📋 Dashboard Kanban</h1>
         <p>Gerenciamento visual das conversas do Chatwoot</p>
@@ -291,8 +336,7 @@
         </div>
     </div>
 
-    <div class="kanban-board">
-        <!-- Coluna Aberto -->
+    <div class="kanban-board" id="kanban-board">
         <div class="kanban-column open-column">
             <div class="column-header">
                 <h3>🔵 Aberto</h3>
@@ -303,7 +347,6 @@
             </div>
         </div>
 
-        <!-- Coluna Em Andamento -->
         <div class="kanban-column in-progress-column">
             <div class="column-header">
                 <h3>🟡 Em Andamento</h3>
@@ -314,7 +357,6 @@
             </div>
         </div>
 
-        <!-- Coluna Resolvido -->
         <div class="kanban-column resolved-column">
             <div class="column-header">
                 <h3>🟢 Resolvido</h3>
@@ -330,53 +372,40 @@
         class ChatwootKanban {
             constructor() {
                 this.conversations = [];
-                this.currentAgent = null;
-                this.baseURL = 'https://chatwoot.fluxio.app.br'; // Sua instância
+                this.baseURL = '';
+                this.apiToken = '';
+                this.accountId = '';
                 this.init();
             }
 
             init() {
-                // Listen for Chatwoot context data
-                window.addEventListener("message", (event) => {
-                    if (!this.isJSONValid(event.data)) return;
-                    
-                    const eventData = JSON.parse(event.data);
-                    if (eventData.event === "appContext") {
-                        this.handleChatwootData(eventData.data);
+                // Event listener for the form submission
+                document.getElementById('start-kanban').addEventListener('click', () => {
+                    this.baseURL = document.getElementById('chatwoot-url').value.trim();
+                    this.accountId = document.getElementById('account-id').value.trim();
+                    this.apiToken = document.getElementById('api-token').value.trim();
+
+                    if (this.baseURL && this.accountId && this.apiToken) {
+                        document.getElementById('settings-form').style.display = 'none';
+                        document.getElementById('kanban-board').style.display = 'grid';
+                        this.loadRealConversations();
+                        setInterval(() => this.loadRealConversations(), 30000);
+                    } else {
+                        alert('Por favor, preencha todos os campos de configuração.');
                     }
                 });
 
-                // Request initial data from Chatwoot
-                this.requestChatwootData();
-                
-                // Setup auto-refresh
-                setInterval(() => {
-                    this.requestChatwootData();
-                }, 30000); // Refresh every 30 seconds
-            }
-
-            isJSONValid(str) {
-                try {
-                    JSON.parse(str);
-                    return true;
-                } catch (e) {
-                    return false;
-                }
-            }
-
-            requestChatwootData() {
-                // Request conversation data from Chatwoot
-                if (window.parent) {
-                    window.parent.postMessage('chatwoot-dashboard-app:fetch-info', '*');
-                }
-            }
-
-            handleChatwootData(data) {
-                console.log('Received Chatwoot data:', data);
-                this.currentAgent = data.currentAgent;
-                
-                // Load real conversations from API
-                this.loadRealConversations();
+                // Request initial data from Chatwoot context
+                window.addEventListener("message", (event) => {
+                    if (typeof event.data === 'string' && event.data.includes('appContext')) {
+                        const eventData = JSON.parse(event.data);
+                        if (eventData.event === "appContext" && eventData.data) {
+                            // Optionally, you can try to parse the base URL and account ID from the context
+                            // This part might not be reliable for all Chatwoot versions or setups
+                            console.log('Received Chatwoot appContext:', eventData.data);
+                        }
+                    }
+                });
             }
 
             async loadRealConversations() {
@@ -393,9 +422,8 @@
                     }
 
                     const data = await response.json();
-                    console.log('API Response:', data);
                     
-                    this.conversations = data.data.payload.map(conv => ({
+                    this.conversations = data.payload.map(conv => ({
                         id: conv.id,
                         status: this.mapStatus(conv.status),
                         contact: {
@@ -407,16 +435,13 @@
                         assignee: conv.meta.assignee ? {
                             name: conv.meta.assignee.name
                         } : null,
-                        unread_count: conv.unread_count || 0,
-                        inbox_id: conv.inbox_id
+                        unread_count: conv.unread_count || 0
                     }));
 
                     this.renderKanban();
                 } catch (error) {
                     console.error('Erro ao carregar conversas:', error);
-                    this.showError('Erro ao conectar com Chatwoot API. Verifique o token e conectividade.');
-                    // Fallback para dados demo
-                    this.loadDemoData();
+                    this.showError('Erro ao conectar com Chatwoot API. Verifique a URL, ID da conta e o Token. ' + error.message);
                 }
             }
 
@@ -452,74 +477,11 @@
                 });
             }
 
-            loadDemoData() {
-                // Demo data for visualization
-                this.conversations = [
-                    {
-                        id: 1,
-                        status: 'open',
-                        contact: { name: 'João Silva', email: 'joao@email.com' },
-                        last_message: 'Olá, preciso de ajuda com meu pedido #12345',
-                        created_at: new Date(Date.now() - 3600000).toISOString(),
-                        assignee: { name: 'Ana Costa' },
-                        unread_count: 2
-                    },
-                    {
-                        id: 2,
-                        status: 'open',
-                        contact: { name: 'Maria Santos', email: 'maria@email.com' },
-                        last_message: 'Gostaria de saber sobre os prazos de entrega',
-                        created_at: new Date(Date.now() - 7200000).toISOString(),
-                        assignee: null,
-                        unread_count: 1
-                    },
-                    {
-                        id: 3,
-                        status: 'progress',
-                        contact: { name: 'Carlos Oliveira', email: 'carlos@email.com' },
-                        last_message: 'Obrigado pela informação, vou aguardar',
-                        created_at: new Date(Date.now() - 14400000).toISOString(),
-                        assignee: { name: 'Pedro Lima' },
-                        unread_count: 0
-                    },
-                    {
-                        id: 4,
-                        status: 'progress',
-                        contact: { name: 'Ana Paula', email: 'ana@email.com' },
-                        last_message: 'Já recebi o e-mail com as instruções',
-                        created_at: new Date(Date.now() - 21600000).toISOString(),
-                        assignee: { name: 'Ana Costa' },
-                        unread_count: 0
-                    },
-                    {
-                        id: 5,
-                        status: 'resolved',
-                        contact: { name: 'Roberto Lima', email: 'roberto@email.com' },
-                        last_message: 'Problema resolvido! Muito obrigado pelo atendimento.',
-                        created_at: new Date(Date.now() - 28800000).toISOString(),
-                        assignee: { name: 'Pedro Lima' },
-                        unread_count: 0
-                    },
-                    {
-                        id: 6,
-                        status: 'resolved',
-                        contact: { name: 'Lucia Ferreira', email: 'lucia@email.com' },
-                        last_message: 'Tudo certo, obrigada!',
-                        created_at: new Date(Date.now() - 32400000).toISOString(),
-                        assignee: { name: 'Ana Costa' },
-                        unread_count: 0
-                    }
-                ];
-
-                this.renderKanban();
-            }
-
             renderKanban() {
                 const openCards = this.conversations.filter(c => c.status === 'open');
                 const progressCards = this.conversations.filter(c => c.status === 'progress');
                 const resolvedCards = this.conversations.filter(c => c.status === 'resolved');
 
-                // Update counters
                 document.getElementById('open-count').textContent = openCards.length;
                 document.getElementById('progress-count').textContent = progressCards.length;
                 document.getElementById('resolved-count').textContent = resolvedCards.length;
@@ -528,7 +490,6 @@
                 document.getElementById('progress-column-count').textContent = `${progressCards.length} conversas`;
                 document.getElementById('resolved-column-count').textContent = `${resolvedCards.length} conversas`;
 
-                // Render cards
                 this.renderCards('open-cards', openCards);
                 this.renderCards('progress-cards', progressCards);
                 this.renderCards('resolved-cards', resolvedCards);
@@ -544,7 +505,6 @@
 
                 container.innerHTML = conversations.map(conv => this.createCardHTML(conv)).join('');
 
-                // Add click handlers
                 container.querySelectorAll('.conversation-card').forEach(card => {
                     card.addEventListener('click', () => {
                         const convId = card.dataset.convId;
@@ -555,9 +515,8 @@
 
             createCardHTML(conversation) {
                 const timeAgo = this.formatTimeAgo(conversation.created_at);
-                const initials = conversation.contact.name.split(' ').map(n => n[0]).join('').toUpperCase();
                 const assigneeName = conversation.assignee ? conversation.assignee.name : 'Não atribuído';
-                const assigneeInitials = conversation.assignee ? 
+                const assigneeInitials = conversation.assignee ?
                     conversation.assignee.name.split(' ').map(n => n[0]).join('').toUpperCase() : '?';
 
                 return `
@@ -591,53 +550,31 @@
                 const now = new Date();
                 const date = new Date(dateString);
                 const diffMs = now - date;
-                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
                 const diffMins = Math.floor(diffMs / (1000 * 60));
 
-                if (diffHours < 1) {
+                if (diffMins < 60) {
                     return `${diffMins}min atrás`;
-                } else if (diffHours < 24) {
+                } else if (diffMins < 1440) {
+                    const diffHours = Math.floor(diffMins / 60);
                     return `${diffHours}h atrás`;
                 } else {
-                    const diffDays = Math.floor(diffHours / 24);
+                    const diffDays = Math.floor(diffMins / 1440);
                     return `${diffDays}d atrás`;
                 }
             }
 
             openConversation(convId) {
-                // This would ideally open the conversation in Chatwoot
-                // For now, we'll just log it
-                console.log('Opening conversation:', convId);
-                
-                // Try to communicate back to Chatwoot parent window
                 if (window.parent) {
                     window.parent.postMessage({
                         type: 'chatwoot-dashboard-app:open-conversation',
                         conversationId: convId
                     }, '*');
                 }
-                
-                // Show feedback to user
-                const card = document.querySelector(`[data-conv-id="${convId}"]`);
-                if (card) {
-                    card.style.background = '#e0f2fe';
-                    setTimeout(() => {
-                        card.style.background = 'white';
-                    }, 1000);
-                }
             }
         }
 
-        // Initialize the kanban when the page loads
         document.addEventListener('DOMContentLoaded', () => {
             new ChatwootKanban();
-        });
-
-        // Add refresh functionality
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('refresh-btn')) {
-                location.reload();
-            }
         });
     </script>
 </body>
